@@ -33,7 +33,7 @@ enum Instruction {
     JMZ,
     JMN,
     DJN, // TODO not implemented
-    CMP, // TODO not implemented
+    CMP,
     SLT, // TODO not implemented
     SPL, // TODO not implemented
 }
@@ -50,7 +50,7 @@ enum Modifier {
     I,
 }
 
-#[derive(Clone)]
+#[derive(PartialEq, Clone)]
 struct Param {
     addr: Address,
     val:  i32,
@@ -62,7 +62,7 @@ impl Param {
     }
 }
 
-#[derive(Clone)]
+#[derive(PartialEq, Clone)]
 struct Cell {
     ins:      Instruction,
     modifier: Modifier,
@@ -133,8 +133,8 @@ impl Mars {
                 if cptr == self.iptr {
                     print!("\x1B[0;31m");
                 }
-                match self.core[cptr].ins {
-                    DAT => print!("{} ", self.core[cptr].b.val),
+                match cell.ins {
+                    DAT => print!("{} ", cell.b.val),
                     MOV => print!("M "),
                     ADD => print!("A "),
                     JMP => print!("J "),
@@ -206,21 +206,31 @@ impl Mars {
                 _  => panic!("Modifier not implemented"),
             },
             JMP => return Some(aptr),
-            JMZ => {
-                match cell.modifier {
-                    A | BA if self.core[bptr].a.val == 0                                  => return Some(aptr),
-                    B | AB if self.core[bptr].b.val == 0                                  => return Some(aptr),
-                    F | X | I if self.core[bptr].a.val == 0 && self.core[bptr].b.val == 0 => return Some(aptr),
-                    _                                                                     => { },
-                }
+            JMZ => match cell.modifier {
+                A | BA    if self.core[bptr].a.val == 0 => return Some(aptr),
+                B | AB    if self.core[bptr].b.val == 0 => return Some(aptr),
+                F | X | I if self.core[bptr].a.val == 0
+                          && self.core[bptr].b.val == 0 => return Some(aptr),
+                _                                       => { },
             },
-            JMN => {
-                match cell.modifier {
-                    A | BA if self.core[bptr].a.val != 0                                  => return Some(aptr),
-                    B | AB if self.core[bptr].b.val != 0                                  => return Some(aptr),
-                    F | X | I if self.core[bptr].a.val != 0 && self.core[bptr].b.val != 0 => return Some(aptr),
-                    _                                                                     => { },
-                }
+            JMN => match cell.modifier {
+                A | BA    if self.core[bptr].a.val != 0 => return Some(aptr),
+                B | AB    if self.core[bptr].b.val != 0 => return Some(aptr),
+                F | X | I if self.core[bptr].a.val != 0
+                          && self.core[bptr].b.val != 0 => return Some(aptr),
+                _                                       => { },
+            },
+            CMP => match cell.modifier {
+                A  if self.core[aptr].a.val == self.core[bptr].a.val => return Some(self.add_iptr(iptr, 2)),
+                B  if self.core[aptr].b.val == self.core[bptr].b.val => return Some(self.add_iptr(iptr, 2)),
+                AB if self.core[aptr].a.val == self.core[bptr].b.val => return Some(self.add_iptr(iptr, 2)),
+                BA if self.core[aptr].b.val == self.core[bptr].a.val => return Some(self.add_iptr(iptr, 2)),
+                F  if self.core[aptr].a.val == self.core[bptr].a.val
+                   && self.core[aptr].b.val == self.core[bptr].b.val => return Some(self.add_iptr(iptr, 2)),
+                X  if self.core[aptr].a.val == self.core[bptr].b.val
+                   && self.core[aptr].b.val == self.core[bptr].a.val => return Some(self.add_iptr(iptr, 2)),
+                I  if self.core[aptr] == self.core[bptr]             => return Some(self.add_iptr(iptr, 2)),
+                _                                                    => { },
             },
             _   => panic!("Instruction not implemented"),
         }
