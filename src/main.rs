@@ -5,7 +5,7 @@ use std::thread::sleep;
 use std::time::duration::Duration;
 
 use Address::{ Immediate, Direct, Indirect, PreIncIndirect, PostIncIndirect };
-use Instruction::{ DAT, MOV, ADD, SUB, MUL, DIV, MOD, JMP, JMZ, JMN, DJN, CMP, SLT, SPL };
+use Instruction::{ DAT, NOP, MOV, ADD, SUB, MUL, DIV, MOD, JMP, JMZ, JMN, DJN, CMP, SLT, SPL };
 use Modifier::{ A, B, AB, BA, F, X, I };
 
 // Address modes
@@ -13,28 +13,29 @@ use Modifier::{ A, B, AB, BA, F, X, I };
 enum Address {
     Immediate,       // #
     Direct,          // $
-    Indirect,        //
-    PreIncIndirect,  //
-    PostIncIndirect, //
+    Indirect,        // @
+    PreIncIndirect,  // { < TODO not implemented
+    PostIncIndirect, // } > TODO not implemented
 }
 
 // Instructions
 #[derive(PartialEq, Clone)]
 enum Instruction {
     DAT,
+    NOP,
     MOV,
-    ADD,
-    SUB,
-    MUL,
-    DIV,
-    MOD,
+    ADD, // TODO not implemented
+    SUB, // TODO not implemented
+    MUL, // TODO not implemented
+    DIV, // TODO not implemented
+    MOD, // TODO not implemented
     JMP,
     JMZ,
     JMN,
-    DJN,
-    CMP,
-    SLT,
-    SPL,
+    DJN, // TODO not implemented
+    CMP, // TODO not implemented
+    SLT, // TODO not implemented
+    SPL, // TODO not implemented
 }
 
 // Modifiers
@@ -76,7 +77,7 @@ impl Cell {
             // ICWS'88 to ICWS'94 conversion
             None           => {
                 match ins {
-                    DAT                         => F,
+                    DAT | NOP                   => F,
                     MOV | CMP                   => {
                         match (&a.addr, &b.addr) {
                             (&Immediate, _) => AB,
@@ -145,7 +146,10 @@ impl Mars {
             }
             println!("");
 
-            self.iptr = self.execute(iptr);
+            self.iptr = match self.execute(iptr) {
+                Some(iptr) => iptr,
+                None       => break,
+            };
             sleep(Duration::milliseconds(100));
         }
     }
@@ -162,13 +166,13 @@ impl Mars {
                 let ptrcell = self.add_iptr(iptr, param.val);
                 param.val + get_param(&self.core[ptrcell]).val
             },
-            PreIncIndirect  => panic!("PreIncIndirect not implemented"),                            // TODO
-            PostIncIndirect => panic!("PostIncIndirect not implemented"),                           // TODO
+            PreIncIndirect  => panic!("PreIncIndirect not implemented"),
+            PostIncIndirect => panic!("PostIncIndirect not implemented"),
         };
         self.add_iptr(iptr, ptr)
     }
 
-    fn execute(&mut self, iptr: usize) -> usize {
+    fn execute(&mut self, iptr: usize) -> Option<usize> {
         let cell = self.core[iptr].clone();
 
         // Parameters
@@ -177,31 +181,51 @@ impl Mars {
 
         // Instruction
         match cell.ins {
-            DAT => self.add_iptr(iptr, 1),
-            MOV => {
+            DAT => return None,
+            NOP => { },
+            MOV => match cell.modifier {
+                A  => self.core[bptr].a.val = self.core[aptr].a.val,
+                B  => self.core[bptr].b.val = self.core[aptr].b.val,
+                AB => self.core[bptr].b.val = self.core[aptr].a.val,
+                BA => self.core[bptr].a.val = self.core[aptr].b.val,
+                F  => {
+                    self.core[bptr].a.val = self.core[aptr].a.val;
+                    self.core[bptr].b.val = self.core[aptr].b.val;
+                },
+                X  => {
+                    self.core[bptr].b.val = self.core[aptr].a.val;
+                    self.core[bptr].a.val = self.core[aptr].b.val;
+                },
+                I  => self.core[bptr] = self.core[aptr].clone(),
+            },
+            ADD => match cell.modifier {
+                AB => {
+                    let sum = self.core[aptr].a.val + self.core[bptr].b.val;
+                    self.core[bptr].b.val = sum;
+                },
+                _  => panic!("Modifier not implemented"),
+            },
+            JMP => return Some(aptr),
+            JMZ => {
                 match cell.modifier {
-                    I => {
-                        self.core[bptr] = self.core[aptr].clone();
-                        self.add_iptr(iptr, 1)
-                    },
-                    _ => panic!("Modifier not implemented"),
+                    A | BA if self.core[bptr].a.val == 0                                  => return Some(aptr),
+                    B | AB if self.core[bptr].b.val == 0                                  => return Some(aptr),
+                    F | X | I if self.core[bptr].a.val == 0 && self.core[bptr].b.val == 0 => return Some(aptr),
+                    _                                                                     => { },
                 }
             },
-            ADD => {
+            JMN => {
                 match cell.modifier {
-                    AB => {
-                        let sum = self.core[aptr].a.val + self.core[bptr].b.val;
-                        self.core[bptr].b.val = sum;
-                        self.add_iptr(iptr, 1)
-                    },
-                    _ => panic!("Modifier not implemented"),
+                    A | BA if self.core[bptr].a.val != 0                                  => return Some(aptr),
+                    B | AB if self.core[bptr].b.val != 0                                  => return Some(aptr),
+                    F | X | I if self.core[bptr].a.val != 0 && self.core[bptr].b.val != 0 => return Some(aptr),
+                    _                                                                     => { },
                 }
             },
-            JMP => {
-                aptr
-            }
             _   => panic!("Instruction not implemented"),
         }
+
+        Some(self.add_iptr(iptr, 1))
     }
 
     fn add_iptr(&self, iptr: usize, add: i32) -> usize {
@@ -223,5 +247,4 @@ fn main() {
         Cell::new(DAT, None, Param::new(Immediate, 0), Param::new(Immediate, 0))
     ]);
     mars.run();
-    println!("Hello, world!");
 }
