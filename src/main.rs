@@ -24,7 +24,7 @@ enum Instruction {
     DAT,
     NOP,
     MOV,
-    ADD, // TODO not implemented
+    ADD, // FIXME not sure if the implementation is correct
     SUB, // TODO not implemented
     MUL, // TODO not implemented
     DIV, // TODO not implemented
@@ -32,9 +32,9 @@ enum Instruction {
     JMP,
     JMZ,
     JMN,
-    DJN, // TODO not implemented
+    DJN,
     CMP,
-    SLT, // TODO not implemented
+    SLT, // FIXME not sure if the implementation is correct
     SPL, // TODO not implemented
 }
 
@@ -53,11 +53,11 @@ enum Modifier {
 #[derive(PartialEq, Clone)]
 struct Param {
     addr: Address,
-    val:  i32,
+    val:  usize,
 }
 
 impl Param {
-    fn new(addr: Address, val: i32) -> Param {
+    fn new(addr: Address, val: usize) -> Param {
         Param { addr: addr, val: val }
     }
 }
@@ -163,13 +163,13 @@ impl Mars {
             Immediate       => 0,
             Direct          => param.val,
             Indirect        => {
-                let ptrcell = self.add_iptr(iptr, param.val);
+                let ptrcell = self.ptr_add(iptr, param.val);
                 param.val + get_param(&self.core[ptrcell]).val
             },
             PreIncIndirect  => panic!("PreIncIndirect not implemented"),
             PostIncIndirect => panic!("PostIncIndirect not implemented"),
         };
-        self.add_iptr(iptr, ptr)
+        self.ptr_add(iptr, ptr)
     }
 
     fn execute(&mut self, iptr: usize) -> Option<usize> {
@@ -199,11 +199,36 @@ impl Mars {
                 I  => self.core[bptr] = self.core[aptr].clone(),
             },
             ADD => match cell.modifier {
+                A  => {
+                    let sum = self.core[aptr].a.val + self.core[bptr].a.val;
+                    self.core[bptr].a.val = sum;
+                },
+                B  => {
+                    let sum = self.core[aptr].b.val + self.core[bptr].b.val;
+                    self.core[bptr].b.val = sum;
+                },
+                // FIXME not sure if the implementation is correct
                 AB => {
                     let sum = self.core[aptr].a.val + self.core[bptr].b.val;
                     self.core[bptr].b.val = sum;
                 },
-                _  => panic!("Modifier not implemented"),
+                // FIXME not sure if the implementation is correct
+                BA => {
+                    let sum = self.core[aptr].a.val + self.core[bptr].b.val;
+                    self.core[bptr].a.val = sum;
+                },
+                F | I => {
+                    let asum = self.core[aptr].a.val + self.core[bptr].a.val;
+                    let bsum = self.core[aptr].b.val + self.core[bptr].b.val;
+                    self.core[bptr].a.val = asum;
+                    self.core[bptr].b.val = bsum;
+                },
+                X     => {
+                    let asum = self.core[aptr].a.val + self.core[bptr].b.val;
+                    let bsum = self.core[aptr].b.val + self.core[bptr].a.val;
+                    self.core[bptr].a.val = asum;
+                    self.core[bptr].b.val = bsum;
+                },
             },
             JMP => return Some(aptr),
             JMZ => match cell.modifier {
@@ -220,26 +245,61 @@ impl Mars {
                           && self.core[bptr].b.val != 0 => return Some(aptr),
                 _                                       => { },
             },
+            DJN => match cell.modifier {
+                // FIXME not sure if the implementation is correct
+                A | BA    => {
+                    self.core[bptr].a.val -= 1;
+                    if self.core[bptr].a.val != 0 {
+                        return Some(aptr);
+                    }
+                },
+                // FIXME not sure if the implementation is correct
+                B | AB    => {
+                    self.core[bptr].b.val -= 1;
+                    if self.core[bptr].b.val != 0 {
+                        return Some(aptr);
+                    }
+                }
+                // FIXME not sure if the implementation is correct
+                F | X | I => {
+                    self.core[bptr].a.val -= 1;
+                    self.core[bptr].b.val -= 1;
+                    if self.core[bptr].a.val != 0 && self.core[bptr].b.val != 0 {
+                        return Some(aptr);
+                    }
+                }
+            },
             CMP => match cell.modifier {
-                A  if self.core[aptr].a.val == self.core[bptr].a.val => return Some(self.add_iptr(iptr, 2)),
-                B  if self.core[aptr].b.val == self.core[bptr].b.val => return Some(self.add_iptr(iptr, 2)),
-                AB if self.core[aptr].a.val == self.core[bptr].b.val => return Some(self.add_iptr(iptr, 2)),
-                BA if self.core[aptr].b.val == self.core[bptr].a.val => return Some(self.add_iptr(iptr, 2)),
+                A  if self.core[aptr].a.val == self.core[bptr].a.val => return Some(self.ptr_add(iptr, 2)),
+                B  if self.core[aptr].b.val == self.core[bptr].b.val => return Some(self.ptr_add(iptr, 2)),
+                AB if self.core[aptr].a.val == self.core[bptr].b.val => return Some(self.ptr_add(iptr, 2)),
+                BA if self.core[aptr].b.val == self.core[bptr].a.val => return Some(self.ptr_add(iptr, 2)),
                 F  if self.core[aptr].a.val == self.core[bptr].a.val
-                   && self.core[aptr].b.val == self.core[bptr].b.val => return Some(self.add_iptr(iptr, 2)),
+                   && self.core[aptr].b.val == self.core[bptr].b.val => return Some(self.ptr_add(iptr, 2)),
                 X  if self.core[aptr].a.val == self.core[bptr].b.val
-                   && self.core[aptr].b.val == self.core[bptr].a.val => return Some(self.add_iptr(iptr, 2)),
-                I  if self.core[aptr] == self.core[bptr]             => return Some(self.add_iptr(iptr, 2)),
+                   && self.core[aptr].b.val == self.core[bptr].a.val => return Some(self.ptr_add(iptr, 2)),
+                I  if self.core[aptr] == self.core[bptr]             => return Some(self.ptr_add(iptr, 2)),
                 _                                                    => { },
+            },
+            SLT => match cell.modifier {
+                A     if self.core[aptr].a.val < self.core[bptr].a.val => return Some(self.ptr_add(iptr, 2)),
+                B     if self.core[aptr].b.val < self.core[bptr].b.val => return Some(self.ptr_add(iptr, 2)),
+                AB    if self.core[aptr].a.val < self.core[bptr].b.val => return Some(self.ptr_add(iptr, 2)),
+                BA    if self.core[aptr].b.val < self.core[bptr].a.val => return Some(self.ptr_add(iptr, 2)),
+                F | I if self.core[aptr].a.val < self.core[bptr].a.val
+                      && self.core[aptr].b.val < self.core[bptr].b.val => return Some(self.ptr_add(iptr, 2)),
+                X     if self.core[aptr].a.val < self.core[bptr].b.val
+                      && self.core[aptr].b.val < self.core[bptr].a.val => return Some(self.ptr_add(iptr, 2)),
+                _                                                      => { },
             },
             _   => panic!("Instruction not implemented"),
         }
 
-        Some(self.add_iptr(iptr, 1))
+        Some(self.ptr_add(iptr, 1))
     }
 
-    fn add_iptr(&self, iptr: usize, add: i32) -> usize {
-        (iptr as i32 + add + self.core.len() as i32) as usize % self.core.len()
+    fn ptr_add(&self, ptr: usize, rhs: usize) -> usize {
+        (ptr + rhs) % self.core.len()
     }
 }
 
@@ -253,7 +313,7 @@ fn main() {
     mars.load(vec![
         Cell::new(ADD, None, Param::new(Immediate, 4), Param::new(Direct, 3)),
         Cell::new(MOV, None, Param::new(Direct, 2), Param::new(Indirect, 2)),
-        Cell::new(JMP, None, Param::new(Direct, -2), Param::new(Immediate, 0)),
+        Cell::new(JMP, None, Param::new(Direct, -2 + 32), Param::new(Immediate, 0)),
         Cell::new(DAT, None, Param::new(Immediate, 0), Param::new(Immediate, 0))
     ]);
     mars.run();
